@@ -250,9 +250,12 @@ void WorldSession::HandleGuildAcceptOpcode(WorldPacket& /*recvPacket*/)
 void WorldSession::HandleGuildDeclineOpcode(WorldPacket& /*recvPacket*/)
 {
     DEBUG_LOG("WORLD: Received opcode CMSG_GUILD_DECLINE");
+    if (GetPlayer()->GetGuildId())
+    {
+        return;
+    }
 
     GetPlayer()->SetGuildIdInvited(0);
-    GetPlayer()->SetInGuild(0);
 }
 
 void WorldSession::HandleGuildInfoOpcode(WorldPacket& /*recvPacket*/)

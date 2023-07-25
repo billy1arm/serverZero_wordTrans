@@ -58,6 +58,7 @@
 #include "BattleGround/BattleGroundAV.h"
 #include "OutdoorPvP/OutdoorPvP.h"
 #include "Chat.h"
+#include "revision_data.h"
 #include "Database/DatabaseImpl.h"
 #include "Spell.h"
 #include "ScriptMgr.h"
@@ -1076,6 +1077,7 @@ int32 Player::getMaxTimer(MirrorTimerType timer)
         default:
             return 0;
     }
+    return 0;
 }
 
 void Player::UpdateMirrorTimers()
@@ -1353,7 +1355,7 @@ void Player::Update(uint32 update_diff, uint32 p_time)
                 RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_ENTER_PVP_COMBAT);
             }
         }
-    }
+    }// Speed collect rest bonus (section/in hour)
 
     if (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING))
     {
@@ -1418,6 +1420,7 @@ void Player::Update(uint32 update_diff, uint32 p_time)
             else
             {
                 // Use area updates as well
+                // Needed for free for all arenas for example
                 if (m_areaUpdateId != newarea)
                 {
                     UpdateArea(newarea);
@@ -3395,7 +3398,7 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
 
         m_spells[spell_id] = newspell;
 
-        // return false if spell disabled
+        // return false if spell disabled or spell is non-stackable with lower-ranks
         if (newspell.disabled)
         {
             return false;
@@ -4434,7 +4437,7 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
         case 0:
         {
             // return back all mails with COD and Item                  0    1             2                3        4         5      6       7
-            QueryResult* resultMail = CharacterDatabase.PQuery("SELECT `id`,`messageType`,`mailTemplateId`,`sender`,`subject`,`itemTextId`,`money`,`has_items` FROM `mail` WHERE `receiver`='%u' AND `has_items`<>0 AND `cod`<>0", lowguid);
+            QueryResult* resultMail = CharacterDatabase.PQuery("SELECT `id`,`messageType`,`mailTemplateId`,`sender`,`subject`,`body`,`money`,`has_items` FROM `mail` WHERE `receiver`='%u' AND `has_items`<>0 AND `cod`<>0", lowguid);
             if (resultMail)
             {
                 do
@@ -4446,7 +4449,7 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
                     uint16 mailTemplateId = fields[2].GetUInt16();
                     uint32 sender        = fields[3].GetUInt32();
                     std::string subject  = fields[4].GetCppString();
-                    uint32 itemTextId    = fields[5].GetUInt32();
+                    std::string body     = fields[5].GetCppString();
                     uint32 money         = fields[6].GetUInt32();
                     bool has_items       = fields[7].GetBool();
 
@@ -4464,29 +4467,29 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
                         continue;
                     }
 
-                    MailDraft draft;
+                    MailDraft draft(subject, body);
                     if (mailTemplateId)
                     {
                         draft.SetMailTemplate(mailTemplateId, false); // items already included
                     }
                     else
                     {
-                        draft.SetSubjectAndBodyId(subject, itemTextId);
+                        draft.SetSubjectAndBody(subject, body);
                     }
 
                     if (has_items)
                     {
                         // data needs to be at first place for Item::LoadFromDB
-                        //                                                           0      1           2
-                        QueryResult* resultItems = CharacterDatabase.PQuery("SELECT `data`,`item_guid`,`item_template` FROM `mail_items` JOIN `item_instance` ON `item_guid` = `guid` WHERE `mail_id`='%u'", mail_id);
+                        //                                                           0      1      2           3
+                        QueryResult* resultItems = CharacterDatabase.PQuery("SELECT `data`,`text`,`item_guid`,`item_template` FROM `mail_items` JOIN `item_instance` ON `item_guid` = `guid` WHERE `mail_id`='%u'", mail_id);
                         if (resultItems)
                         {
                             do
                             {
                                 Field* fields2 = resultItems->Fetch();
 
-                                uint32 item_guidlow = fields2[1].GetUInt32();
-                                uint32 item_template = fields2[2].GetUInt32();
+                                uint32 item_guidlow = fields2[2].GetUInt32();
+                                uint32 item_template = fields2[3].GetUInt32();
 
                                 ItemPrototype const* itemProto = ObjectMgr::GetItemPrototype(item_template);
                                 if (!itemProto)
@@ -5026,11 +5029,12 @@ void Player::DurabilityLoss(Item* item, double percent)
 void Player::DurabilityPointsLossAll(int32 points, bool inventory)
 {
     for (int i = EQUIPMENT_SLOT_START; i < EQUIPMENT_SLOT_END; ++i)
+    {
         if (Item* pItem = GetItemByPos(INVENTORY_SLOT_BAG_0, i))
         {
             DurabilityPointsLoss(pItem, points);
         }
-
+    }
     if (inventory)
     {
         // bags not have durability
@@ -6594,6 +6598,15 @@ void Player::SendCinematicStart(uint32 CinematicSequenceId)
     data << uint32(CinematicSequenceId);
     SendDirectMessage(&data);
 }
+
+#if defined (WOTLK) || defined (CATA) || defined (MISTS)
+void Player::SendMovieStart(uint32 MovieId)
+{
+    WorldPacket data(SMSG_TRIGGER_MOVIE, 4);
+    data << uint32(MovieId);
+    SendDirectMessage(&data);
+}
+#endif
 
 void Player::CheckAreaExploreAndOutdoor()
 {
@@ -14678,6 +14691,22 @@ void Player::AddQuest(Quest const* pQuest, Object* questGiver)
     }
 
     UpdateForQuestWorldObjects();
+
+    if (sWorld.getConfig(CONFIG_BOOL_ENABLE_QUEST_TRACKER)) // check if Quest Tracker is enabled
+    {
+        DEBUG_LOG("QUEST TRACKER: Quest Added.");
+
+        static SqlStatementID CHAR_INS_QUEST_TRACK;
+        // prepare Quest Tracker datas
+        SqlStatement stmt = CharacterDatabase.CreateStatement(CHAR_INS_QUEST_TRACK, "INSERT INTO `quest_tracker` (`id`, `character_guid`, `quest_accept_time`, `core_hash`, `core_revision`) VALUES (?, ?, NOW(), ?, ?)");
+        stmt.addUInt32(quest_id);
+        stmt.addUInt32(GetGUIDLow());
+        stmt.addString(REVISION_HASH);
+        stmt.addString(REVISION_DATE);
+
+        // add to Quest Tracker
+        stmt.Execute();
+    }
 }
 
 void Player::CompleteQuest(uint32 quest_id, QuestStatus status)
@@ -14699,6 +14728,19 @@ void Player::CompleteQuest(uint32 quest_id, QuestStatus status)
                 RewardQuest(qInfo, 0, this, false);
             }
         }
+    }
+
+    if (sWorld.getConfig(CONFIG_BOOL_ENABLE_QUEST_TRACKER)) // check if Quest Tracker is enabled
+    {
+        DEBUG_LOG("QUEST TRACKER: Quest Completed.");
+        static SqlStatementID CHAR_UPD_QUEST_TRACK_COMPLETE_TIME;
+        // prepare Quest Tracker datas
+        SqlStatement stmt = CharacterDatabase.CreateStatement(CHAR_UPD_QUEST_TRACK_COMPLETE_TIME, "UPDATE `quest_tracker` SET `quest_complete_time` = NOW() WHERE `id` = ? AND `character_guid` = ? ORDER BY `quest_accept_time` DESC LIMIT 1");
+        stmt.addUInt32(quest_id);
+        stmt.addUInt32(GetGUIDLow());
+
+        // add to Quest Tracker
+        stmt.Execute();
     }
 }
 
@@ -17364,7 +17406,7 @@ void Player::_LoadInventory(QueryResult* result, uint32 timediff)
             std::string subject = "Item could not be loaded to inventory.";
             std::string content = GetSession()->GetMangosString(LANG_NOT_EQUIPPED_ITEM);
             // fill mail
-            MailDraft draft(subject);
+            MailDraft draft(subject,"");
             draft.SetSubjectAndBody(subject,content);
             for (int i = 0; !problematicItems.empty() && i < MAX_MAIL_ITEMS; ++i)
             {
@@ -17441,8 +17483,8 @@ void Player::_LoadItemLoot(QueryResult* result)
 void Player::_LoadMailedItems(QueryResult* result)
 {
     // data needs to be at first place for Item::LoadFromDB
-    //         0     1        2          3
-    // "SELECT data, mail_id, item_guid, item_template FROM mail_items JOIN item_instance ON item_guid = guid WHERE receiver = '%u'", GUID_LOPART(m_guid)
+    //         0     1     2        3          4
+    // "SELECT data, text, mail_id, item_guid, item_template FROM mail_items JOIN item_instance ON item_guid = guid WHERE receiver = '%u'", GUID_LOPART(m_guid)
     if (!result)
     {
         return;
@@ -17493,8 +17535,8 @@ void Player::_LoadMailedItems(QueryResult* result)
 void Player::_LoadMails(QueryResult* result)
 {
     m_mail.clear();
-    //        0  1           2      3        4       5          6           7            8     9   10      11         12             13
-    //"SELECT id,messageType,sender,receiver,subject,itemTextId,expire_time,deliver_time,money,cod,checked,stationery,mailTemplateId,has_items FROM mail WHERE receiver = '%u' ORDER BY id DESC",GetGUIDLow()
+    //        0  1           2      3        4       5    6           7            8     9   10      11         12             13
+    //"SELECT id,messageType,sender,receiver,subject,body,expire_time,deliver_time,money,cod,checked,stationery,mailTemplateId,has_items FROM mail WHERE receiver = '%u' ORDER BY id DESC", GetGUIDLow()
     if (!result)
     {
         return;
@@ -17509,7 +17551,7 @@ void Player::_LoadMails(QueryResult* result)
         m->sender = fields[2].GetUInt32();
         m->receiverGuid = ObjectGuid(HIGHGUID_PLAYER, fields[3].GetUInt32());
         m->subject = fields[4].GetCppString();
-        m->itemTextId = fields[5].GetUInt32();
+        m->body = fields[5].GetCppString();
         m->expire_time = (time_t)fields[6].GetUInt64();
         m->deliver_time = (time_t)fields[7].GetUInt64();
         m->money = fields[8].GetUInt32();
@@ -18559,7 +18601,6 @@ void Player::SaveMail()
     static SqlStatementID deleteMailItems ;
 
     static SqlStatementID deleteItem ;
-    static SqlStatementID deleteItemText;
     static SqlStatementID deleteMail ;
     static SqlStatementID deleteItems ;
 
@@ -18568,8 +18609,8 @@ void Player::SaveMail()
         Mail* m = (*itr);
         if (m->state == MAIL_STATE_CHANGED)
         {
-            SqlStatement stmt = CharacterDatabase.CreateStatement(updateMail, "UPDATE `mail` SET `itemTextId` = ?,`has_items` = ?, `expire_time` = ?, `deliver_time` = ?, `money` = ?, `cod` = ?, `checked` = ? WHERE `id` = ?");
-            stmt.addUInt32(m->itemTextId);
+            SqlStatement stmt = CharacterDatabase.CreateStatement(updateMail, "UPDATE `mail` SET `body` = ?,`has_items` = ?, `expire_time` = ?, `deliver_time` = ?, `money` = ?, `cod` = ?, `checked` = ? WHERE `id` = ?");
+            stmt.addString(m->body);
             stmt.addUInt32(m->HasItems() ? 1 : 0);
             stmt.addUInt64(uint64(m->expire_time));
             stmt.addUInt64(uint64(m->deliver_time));
@@ -18601,12 +18642,6 @@ void Player::SaveMail()
                 {
                     stmt.PExecute(itr2->item_guid);
                 }
-            }
-
-            if (m->itemTextId)
-            {
-                SqlStatement stmt = CharacterDatabase.CreateStatement(deleteItemText, "DELETE FROM `item_text` WHERE `id` = ?");
-                stmt.PExecute(m->itemTextId);
             }
 
             SqlStatement stmt = CharacterDatabase.CreateStatement(deleteMail, "DELETE FROM `mail` WHERE `id` = ?");
@@ -20173,6 +20208,12 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
         count = 1;
     }
 
+    // cheating attempt
+    if (bag != NULL_BAG && bag != INVENTORY_SLOT_BAG_0 && slot > MAX_BAG_SIZE && slot != NULL_SLOT)
+    {
+        return false;
+    }
+
     if (!IsAlive())
     {
         return false;
@@ -21675,7 +21716,7 @@ void Player::AutoUnequipOffhandIfNeed()
         CharacterDatabase.CommitTransaction();
 
         std::string subject = GetSession()->GetMangosString(LANG_NOT_EQUIPPED_ITEM);
-        MailDraft(subject).AddItem(offItem).SendMailTo(this, MailSender(this, MAIL_STATIONERY_GM), MAIL_CHECK_MASK_COPIED);
+        MailDraft(subject, "There's were problems with equipping this item.").AddItem(offItem).SendMailTo(this, MailSender(this, MAIL_STATIONERY_GM), MAIL_CHECK_MASK_COPIED);
     }
 }
 
@@ -21836,7 +21877,7 @@ bool Player::isHonorOrXPTarget(Unit* pVictim) const
     {
         if (((Creature*)pVictim)->IsTotem() ||
             ((Creature*)pVictim)->IsPet() ||
-            ((Creature*)pVictim)->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_XP_AT_KILL)
+            ((Creature*)pVictim)->GetCreatureInfo()->ExtraFlags & CREATURE_FLAG_EXTRA_NO_XP_AT_KILL)
             {
                 return false;
             }
@@ -22877,6 +22918,23 @@ void Player::ResummonPetTemporaryUnSummonedIfAny()
     }
 
     m_temporaryUnsummonedPetNumber = 0;
+}
+
+bool Player::canSeeSpellClickOn(Creature const* c) const
+{
+    if (!c->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK))
+    {
+        return false;
+    }
+
+    SpellClickInfoMapBounds clickPair = sObjectMgr.GetSpellClickInfoMapBounds(c->GetEntry());
+    for (SpellClickInfoMap::const_iterator itr = clickPair.first; itr != clickPair.second; ++itr)
+        if (itr->second.IsFitToRequirements(this, c))
+        {
+            return true;
+        }
+
+    return false;
 }
 
 void Player::_SaveBGData()

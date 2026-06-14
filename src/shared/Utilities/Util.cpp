@@ -204,24 +204,30 @@ std::string secsToTimeString(time_t timeInSecs, TimeFormat timeFormat, bool hour
     out.reserve(64); // to avoid reallocations
 
     auto append_number = [&](time_t value, bool pad2 = false)
-        {
-            std::array<char, 16> buf{};
-            auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
-            if (pad2 && (ptr - buf.data()) == 1)  // pad single-digit numbers
-                out.push_back('0');
-            out.append(buf.data(), ptr);
-        };
+    {
+        std::array<char, 16> buf{};
+        auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
+        if (pad2 && (ptr - buf.data()) == 1)  // pad single-digit numbers
+        out.push_back('0');
+        out.append(buf.data(), ptr);
+    };
 
     // --- Days ---
     if (days)
     {
         append_number(days);
         if (timeFormat == TimeFormat::Numeric)
+        {
             out += ':';
+        }
         else if (timeFormat == TimeFormat::ShortText)
+        {
             out += 'd';
+        }
         else
+        {
             out += (days == 1 ? " Day " : " Days ");
+        }
     }
 
     // --- Hours ---
@@ -229,11 +235,17 @@ std::string secsToTimeString(time_t timeInSecs, TimeFormat timeFormat, bool hour
     {
         append_number(hours);
         if (timeFormat == TimeFormat::Numeric)
+        {
             out += ':';
+        }
         else if (timeFormat == TimeFormat::ShortText)
+        {
             out += 'h';
+        }
         else
+        {
             out += (hours == 1 ? " Hour " : " Hours ");
+        }
     }
 
     // --- Minutes ---
@@ -241,11 +253,17 @@ std::string secsToTimeString(time_t timeInSecs, TimeFormat timeFormat, bool hour
     {
         append_number(minutes);
         if (timeFormat == TimeFormat::Numeric)
+        {
             out += ':';
+        }
         else if (timeFormat == TimeFormat::ShortText)
+        {
             out += 'm';
+        }
         else
+        {
             out += (minutes == 1 ? " Minute " : " Minutes ");
+        }
     }
     else if (timeFormat == TimeFormat::Numeric)
     {
@@ -259,9 +277,13 @@ std::string secsToTimeString(time_t timeInSecs, TimeFormat timeFormat, bool hour
         // Always pad seconds to 2 digits in numeric format
         append_number(secs, timeFormat == TimeFormat::Numeric);
         if (timeFormat == TimeFormat::ShortText)
+        {
             out += 's';
+        }
         else if (timeFormat == TimeFormat::FullText)
+        {
             out += (secs == 1 ? " Second." : " Seconds.");
+        }
     }
     else if (timeFormat == TimeFormat::Numeric)
     {
@@ -316,16 +338,19 @@ std::string TimeToTimestampStr(time_t t)
     std::array<char, 20> buf; // "YYYY-MM-DD_HH-MM-SS" = 19 chars + '\0'
     char* p = buf.data();
 
-    auto append_2d = [&](int v) {
+    auto append_2d = [&](int v)
+    {
         *p++ = char('0' + v / 10);
         *p++ = char('0' + v % 10);
-        };
-    auto append_4d = [&](int v) {
+    };
+
+    auto append_4d = [&](int v)
+    {
         *p++ = char('0' + (v / 1000) % 10);
         *p++ = char('0' + (v / 100) % 10);
         *p++ = char('0' + (v / 10) % 10);
         *p++ = char('0' + v % 10);
-        };
+    };
 
     append_4d(aTm.tm_year + 1900);
     *p++ = '-';
@@ -566,6 +591,58 @@ bool WStrToUtf8(std::wstring wstr, std::string& utf8str)
 
 typedef wchar_t const* const* wstrlist;
 
+#if !defined(CLASSIC)
+std::wstring GetMainPartOfName(std::wstring wname, uint32 declension)
+{
+    // supported only Cyrillic cases
+    if (wname.size() < 1 || !isCyrillicCharacter(wname[0]) || declension > 5)
+    {
+        return wname;
+    }
+
+    // Important: end length must be <= MAX_INTERNAL_PLAYER_NAME-MAX_PLAYER_NAME (3 currently)
+
+    static wchar_t const a_End[]    = { wchar_t(1), wchar_t(0x0430), wchar_t(0x0000)};
+    static wchar_t const o_End[]    = { wchar_t(1), wchar_t(0x043E), wchar_t(0x0000)};
+    static wchar_t const ya_End[]   = { wchar_t(1), wchar_t(0x044F), wchar_t(0x0000)};
+    static wchar_t const ie_End[]   = { wchar_t(1), wchar_t(0x0435), wchar_t(0x0000)};
+    static wchar_t const i_End[]    = { wchar_t(1), wchar_t(0x0438), wchar_t(0x0000)};
+    static wchar_t const yeru_End[] = { wchar_t(1), wchar_t(0x044B), wchar_t(0x0000)};
+    static wchar_t const u_End[]    = { wchar_t(1), wchar_t(0x0443), wchar_t(0x0000)};
+    static wchar_t const yu_End[]   = { wchar_t(1), wchar_t(0x044E), wchar_t(0x0000)};
+    static wchar_t const oj_End[]   = { wchar_t(2), wchar_t(0x043E), wchar_t(0x0439), wchar_t(0x0000)};
+    static wchar_t const ie_j_End[] = { wchar_t(2), wchar_t(0x0435), wchar_t(0x0439), wchar_t(0x0000)};
+    static wchar_t const io_j_End[] = { wchar_t(2), wchar_t(0x0451), wchar_t(0x0439), wchar_t(0x0000)};
+    static wchar_t const o_m_End[]  = { wchar_t(2), wchar_t(0x043E), wchar_t(0x043C), wchar_t(0x0000)};
+    static wchar_t const io_m_End[] = { wchar_t(2), wchar_t(0x0451), wchar_t(0x043C), wchar_t(0x0000)};
+    static wchar_t const ie_m_End[] = { wchar_t(2), wchar_t(0x0435), wchar_t(0x043C), wchar_t(0x0000)};
+    static wchar_t const soft_End[] = { wchar_t(1), wchar_t(0x044C), wchar_t(0x0000)};
+    static wchar_t const j_End[]    = { wchar_t(1), wchar_t(0x0439), wchar_t(0x0000)};
+
+    static wchar_t const* const dropEnds[6][8] =
+    {
+        { &a_End[1],  &o_End[1],    &ya_End[1],   &ie_End[1],  &soft_End[1], &j_End[1],    NULL,       NULL },
+        { &a_End[1],  &ya_End[1],   &yeru_End[1], &i_End[1],   NULL,         NULL,         NULL,       NULL },
+        { &ie_End[1], &u_End[1],    &yu_End[1],   &i_End[1],   NULL,         NULL,         NULL,       NULL },
+        { &u_End[1],  &yu_End[1],   &o_End[1],    &ie_End[1],  &soft_End[1], &ya_End[1],   &a_End[1],  NULL },
+        { &oj_End[1], &io_j_End[1], &ie_j_End[1], &o_m_End[1], &io_m_End[1], &ie_m_End[1], &yu_End[1], NULL },
+        { &ie_End[1], &i_End[1],    NULL,         NULL,        NULL,         NULL,         NULL,       NULL }
+    };
+
+    for (wchar_t const * const* itr = &dropEnds[declension][0]; *itr; ++itr)
+    {
+        size_t len = size_t((*itr)[-1]);                    // get length from string size field
+
+        if (wname.substr(wname.size() - len, len) == *itr)
+        {
+            return wname.substr(0, wname.size() - len);
+        }
+    }
+
+    return wname;
+}
+#endif
+
 bool utf8ToConsole(const std::string& utf8str, std::string& conStr)
 {
 #if PLATFORM == PLATFORM_WINDOWS
@@ -770,83 +847,83 @@ void print_banner()
     int iCoreNumber = return_iCoreNumber();
     switch (iCoreNumber)
     {
-    case 0: // CLASSIC
-        sLog.outString("<Ctrl-C> to stop.\n"
-            "  __  __      _  _  ___  ___  ___        ____              \n"
-            " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|      /_  /___ _ _ ___   \n"
-            " | |\\/| / _` | .` | (_ | (_) \\__ \\       / // -_) '_/ _ \\ \n"
-            " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/      /___\\___|_| \\___/\n"
-            " Powered By MaNGOS Core\n"
-            "__________________________________________________________\n"
-            "\n"
-            "Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
-            "__________________________________________________________\n"
-            "\n");
-        break;
-    case 1: // TBC
-        sLog.outString("<Ctrl-C> to stop.\n"
-            "  __  __      _  _  ___  ___  ___         ___             \n"
-            " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|       / _ \\ ___  ___  \n"
-            " | |\\/| / _` | .` | (_ | (_) \\__ \\      | (_) |   \\/ -_) \n"
-            " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/       \\___/|_||_\\___|\n"
-            " Powered By MaNGOS Core\n"
-            " __________________________________________________________\n"
-            "\n"
-            " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
-            " __________________________________________________________\n"
-            "\n");
-        break;
-    case 2: // WOTLK
-        sLog.outString("<Ctrl-C> to stop.\n"
-            "  __  __      _  _  ___  ___  ___       _____          \n"
-            " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|     |_   _|_ __ _____\n"
-            " | |\\/| / _` | .` | (_ | (_) \\__ \\       | | \\ V  V / _ \\\n"
-            " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/       |_|  \\_/\\_/\\___/ \n"
-            " Powered By MaNGOS Core\n"
-            " __________________________________________________________\n"
-            "\n"
-            " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
-            " __________________________________________________________\n"
-            "\n");
-        break;
-    case 3: // CATA
-        sLog.outString("<Ctrl-C> to stop.\n"
-            "  __  __      _  _  ___  ___  ___   _____ _         \n"
-            " |  \\/  |__ _| \\| |/ __|/ _ \\/ __| |_   _| |_  _ _ ___ ___    \n"
-            " | |\\/| / _` | .` | (_ | (_) \\__ \\   | | | ' \\| '_/ -_) -_)  \n"
-            " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/   |_| |_||_|_| \\___\\___| \n"
-            " Powered By MaNGOS Core\n"
-            " __________________________________________________________\n"
-            "\n"
-            " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
-            " __________________________________________________________\n"
-            "\n");
-        break;
-    case 4: // MOP
-        sLog.outString("<Ctrl-C> to stop.\n"
-            "  __  __      _  _  ___  ___  ___     _____             \n"
-            " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|    | __|__ _  _ _ _  \n"
-            " | |\\/| / _` | .` | (_ | (_) \\__ \\    | _/ _ \\ || | '_|\n"
-            " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/    |_|\\___/\\_,_|_| \n"
-            " Powered By MaNGOS Core\n"
-            " __________________________________________________________\n"
-            "\n"
-            " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
-            " __________________________________________________________\n"
-            "\n");
-        break;
-    default:
-        sLog.outString("<Ctrl-C> to stop.\n"
-            "  __  __      _  _  ___  ___  ___                                \n"
-            " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|     We have a problem !   \n"
-            " | |\\/| / _` | .` | (_ | (_) \\__ \\   Your version of MaNGOS  \n"
-            " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/   could not be detected   \n"
-            " __________________________________________________________\n"
-            "\n"
-            " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
-            " __________________________________________________________\n"
-            "\n");
-        break;
+        case 0: // CLASSIC
+            sLog.outString("<Ctrl-C> to stop.\n"
+                "  __  __      _  _  ___  ___  ___        ____              \n"
+                " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|      /_  /___ _ _ ___   \n"
+                " | |\\/| / _` | .` | (_ | (_) \\__ \\       / // -_) '_/ _ \\ \n"
+                " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/      /___\\___|_| \\___/\n"
+                " Powered By MaNGOS Core\n"
+                "__________________________________________________________\n"
+                "\n"
+                "Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
+                "__________________________________________________________\n"
+                "\n");
+            break;
+        case 1: // TBC
+            sLog.outString("<Ctrl-C> to stop.\n"
+                "  __  __      _  _  ___  ___  ___         ___             \n"
+                " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|       / _ \\ ___  ___  \n"
+                " | |\\/| / _` | .` | (_ | (_) \\__ \\      | (_) |   \\/ -_) \n"
+                " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/       \\___/|_||_\\___|\n"
+                " Powered By MaNGOS Core\n"
+                " __________________________________________________________\n"
+                "\n"
+                " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
+                " __________________________________________________________\n"
+                "\n");
+            break;
+        case 2: // WOTLK
+            sLog.outString("<Ctrl-C> to stop.\n"
+                "  __  __      _  _  ___  ___  ___       _____          \n"
+                " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|     |_   _|_ __ _____\n"
+                " | |\\/| / _` | .` | (_ | (_) \\__ \\       | | \\ V  V / _ \\\n"
+                " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/       |_|  \\_/\\_/\\___/ \n"
+                " Powered By MaNGOS Core\n"
+                " __________________________________________________________\n"
+                "\n"
+                " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
+                " __________________________________________________________\n"
+                "\n");
+            break;
+        case 3: // CATA
+            sLog.outString("<Ctrl-C> to stop.\n"
+                "  __  __      _  _  ___  ___  ___   _____ _         \n"
+                " |  \\/  |__ _| \\| |/ __|/ _ \\/ __| |_   _| |_  _ _ ___ ___    \n"
+                " | |\\/| / _` | .` | (_ | (_) \\__ \\   | | | ' \\| '_/ -_) -_)  \n"
+                " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/   |_| |_||_|_| \\___\\___| \n"
+                " Powered By MaNGOS Core\n"
+                " __________________________________________________________\n"
+                "\n"
+                " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
+                " __________________________________________________________\n"
+                "\n");
+            break;
+        case 4: // MOP
+            sLog.outString("<Ctrl-C> to stop.\n"
+                "  __  __      _  _  ___  ___  ___     _____             \n"
+                " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|    | __|__ _  _ _ _  \n"
+                " | |\\/| / _` | .` | (_ | (_) \\__ \\    | _/ _ \\ || | '_|\n"
+                " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/    |_|\\___/\\_,_|_| \n"
+                " Powered By MaNGOS Core\n"
+                " __________________________________________________________\n"
+                "\n"
+                " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
+                " __________________________________________________________\n"
+                "\n");
+            break;
+        default:
+            sLog.outString("<Ctrl-C> to stop.\n"
+                "  __  __      _  _  ___  ___  ___                                \n"
+                " |  \\/  |__ _| \\| |/ __|/ _ \\/ __|     We have a problem !   \n"
+                " | |\\/| / _` | .` | (_ | (_) \\__ \\   Your version of MaNGOS  \n"
+                " |_|  |_\\__,_|_|\\_|\\___|\\___/|___/   could not be detected   \n"
+                " __________________________________________________________\n"
+                "\n"
+                " Website/Forum/Wiki/Issue Tracker: https://www.getmangos.eu\n"
+                " __________________________________________________________\n"
+                "\n");
+            break;
     }
 }
 

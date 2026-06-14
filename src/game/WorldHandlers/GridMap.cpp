@@ -117,8 +117,8 @@ bool GridMap::loadData(char* filename)
 
     fread(&header, sizeof(header), 1, in);
     if (header.mapMagic     == *((uint32 const*)(MAP_MAGIC)) &&
-            header.versionMagic == *((uint32 const*)(MAP_VERSION_MAGIC)) &&
-            IsAcceptableClientBuild(header.buildMagic))
+        header.versionMagic == *((uint32 const*)(MAP_VERSION_MAGIC)) &&
+        IsAcceptableClientBuild(header.buildMagic))
     {
         // loadup area data
         if (header.areaMapOffset && !loadAreaData(in, header.areaMapOffset, header.areaMapSize))
@@ -874,9 +874,9 @@ GridMapLiquidStatus GridMap::getLiquidStatus(float x, float y, float z, uint8 Re
  */
 bool GridMap::ExistMap(uint32 mapid, int gx, int gy)
 {
-    int len = sWorld.GetDataPath().length() + strlen("maps/%03u%02u%02u.map") + 1;
+    int len = sWorld.GetDataPath().length() + strlen("maps/%04u%02u%02u.map") + 1;
     char* tmp = new char[len];
-    snprintf(tmp, len, (char*)(sWorld.GetDataPath() + "maps/%03u%02u%02u.map").c_str(), mapid, gx, gy);
+    snprintf(tmp, len, (char*)(sWorld.GetDataPath() + "maps/%04u%02u%02u.map").c_str(), mapid, gx, gy);
 
     FILE* pf = fopen(tmp, "rb");
 
@@ -897,8 +897,8 @@ bool GridMap::ExistMap(uint32 mapid, int gx, int gy)
         return false;
     }
     if (header.mapMagic     != *((uint32 const*)(MAP_MAGIC)) ||
-            header.versionMagic != *((uint32 const*)(MAP_VERSION_MAGIC)) ||
-            !IsAcceptableClientBuild(header.buildMagic))
+        header.versionMagic != *((uint32 const*)(MAP_VERSION_MAGIC)) ||
+        !IsAcceptableClientBuild(header.buildMagic))
     {
         sLog.outError("Map file '%s' is non-compatible version created with a different map-extractor version.", tmp);
         delete[] tmp;
@@ -963,10 +963,12 @@ TerrainInfo::TerrainInfo(uint32 mapid) : m_mapId(mapid), m_refMutex(), m_mutex()
 TerrainInfo::~TerrainInfo()
 {
     for (int k = 0; k < MAX_NUMBER_OF_GRIDS; ++k)
+    {
         for (int i = 0; i < MAX_NUMBER_OF_GRIDS; ++i)
         {
             delete m_GridMaps[i][k];
         }
+    }
 
     VMAP::VMapFactory::createOrGetVMapManager()->unloadMap(m_mapId);
     MMAP::MMapFactory::createOrGetMMapManager()->unloadMap(m_mapId);
@@ -1145,27 +1147,24 @@ float TerrainInfo::GetHeightStatic(float x, float y, float z, bool useVmaps/*=tr
     // vmapheight set for any under Z value or <= INVALID_HEIGHT
     if (vmapHeight > INVALID_HEIGHT)
     {
-        if (mapHeight > INVALID_HEIGHT)
+        // vmap surface above the .map terrain always wins (platforms/bridges/upper floors); this also
+        // covers the case where only vmapHeight is valid (mapHeight <= INVALID_HEIGHT).
+        if (vmapHeight > mapHeight)
         {
-            // we have mapheight and vmapheight and must select more appropriate
-
-            // we are already under the surface or vmap height above map heigt
-            if (z < mapHeight || vmapHeight > mapHeight)
-            {
-                return vmapHeight;
-            }
-            else
-            {
-                return mapHeight;                            // better use .map surface height
-            }
+            return vmapHeight;
         }
-        else
+
+        // vmap floor is below the terrain: only consider dropping to it when the query Z is genuinely
+        // below the terrain, and even then return whichever surface is nearer to Z. This prevents a
+        // navmesh vertex that sits a fraction below the heightmap from being snapped down onto a lower
+        // WMO/building floor. (vmapHeight <= mapHeight here, so the midpoint test == nearest-surface.)
+        if (z < mapHeight)
         {
-            return vmapHeight;                               // we have only vmapHeight (if have)
+            return (z < (vmapHeight + mapHeight) * 0.5f) ? vmapHeight : mapHeight;
         }
     }
 
-    return mapHeight;
+    return mapHeight;                                        // better use .map surface height
 }
 
 /**
@@ -1567,9 +1566,9 @@ GridMap* TerrainInfo::LoadMapAndVMap(const uint32 x, const uint32 y)
             GridMap* map = new GridMap();
 
             // map file name
-            int len = sWorld.GetDataPath().length() + strlen("maps/%03u%02u%02u.map") + 1;
+            int len = sWorld.GetDataPath().length() + strlen("maps/%04u%02u%02u.map") + 1;
             char* tmp = new char[len];
-            snprintf(tmp, len, (char*)(sWorld.GetDataPath() + "maps/%03u%02u%02u.map").c_str(), m_mapId, x, y);
+            snprintf(tmp, len, (char*)(sWorld.GetDataPath() + "maps/%04u%02u%02u.map").c_str(), m_mapId, x, y);
             DEBUG_FILTER_LOG(LOG_FILTER_MAP_LOADING, "Loading map %s", tmp);
 
             if (!map->loadData(tmp))
@@ -1644,7 +1643,7 @@ float TerrainInfo::GetWaterLevel(float x, float y, float z, float* pGround /*= N
 //////////////////////////////////////////////////////////////////////////
 
 #define CLASS_LOCK MaNGOS::ClassLevelLockable<TerrainManager, ACE_Thread_Mutex>
-INSTANTIATE_SINGLETON_2(TerrainManager, CLASS_LOCK);
+    INSTANTIATE_SINGLETON_2(TerrainManager, CLASS_LOCK);
 INSTANTIATE_CLASS_MUTEX(TerrainManager, ACE_Thread_Mutex);
 
 TerrainManager::TerrainManager() : m_mutex()

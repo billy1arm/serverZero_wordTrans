@@ -30,12 +30,14 @@
 #define MANGOS_H_WORLD
 
 #include "Common.h"
+#include "ScheduledExit.h"
 #include "Utilities/Util.h"
 #include "Timer.h"
 #include "Policies/Singleton.h"
 #include "SharedDefines.h"
 #include <set>
 #include <list>
+#include <vector>
 
 #ifdef ENABLE_ELUNA
 #include "Player.h"
@@ -618,6 +620,9 @@ class World
         static float GetRelocationLowerLimitSq()            { return m_relocation_lower_limit_sq; }
         static uint32 GetRelocationAINotifyDelay()          { return m_relocation_ai_notify_delay; }
 
+        static bool   GetVisibilityObserverSweepEnabled()   { return m_visibility_observer_sweep_enabled; }
+        static uint32 GetVisibilityObserverSweepInterval()  { return m_visibility_observer_sweep_interval; }
+
         void InitServerMaintenanceCheck();
         void ServerMaintenanceStart();
 
@@ -641,14 +646,14 @@ class World
         void LoadBroadcastStrings();
 
         /**
-        * \brief: force all client to request player data
-        * \param: ObjectGuid guid : guid of the specified player
-        * \returns: void
-        *
-        * Description: InvalidatePlayerDataToAllClient force all connected clients to clear specified player cache
-        * FullName: World::InvalidatePlayerDataToAllClient
-        * Access: public
-        **/
+         * \brief: force all client to request player data
+         * \param: ObjectGuid guid : guid of the specified player
+         * \returns: void
+         *
+         * Description: InvalidatePlayerDataToAllClient force all connected clients to clear specified player cache
+         * FullName: World::InvalidatePlayerDataToAllClient
+         * Access: public
+         **/
         void InvalidatePlayerDataToAllClient(ObjectGuid guid);
 
 #ifdef ENABLE_ELUNA
@@ -690,10 +695,30 @@ class World
         bool m_broadcastEnable;
         IntervalTimer m_broadcastTimer;
 
+        struct ScheduledExitWarning
+        {
+            uint32 remainingSeconds;
+            int32 textId;
+            bool sent;
+        };
+
+        void LoadScheduledExitConfig();
+        void CheckScheduledExit();
+        void StartScheduledExit();
+        void ResetScheduledExitWarnings();
+        void SendScheduledExitWarnings();
+        void SendScheduledExitWarning(ScheduledExitWarning& warning);
+
         static volatile bool m_stopEvent;
         static uint8 m_ExitCode;
         uint32 m_ShutdownTimer;
         uint32 m_ShutdownMask;
+
+        MaNGOS::ScheduledExitSchedule m_scheduledExit;
+        MaNGOS::ScheduledExitState m_scheduledExitState;
+        uint32 m_scheduledExitDelay;
+        std::vector<ScheduledExitWarning> m_scheduledExitWarnings;
+        bool m_scheduledExitCountdownActive;
 
         uint32 m_NextMaintenanceDate;
         uint32 m_MaintenanceTimeChecker;
@@ -732,6 +757,9 @@ class World
 
         static float  m_relocation_lower_limit_sq;
         static uint32 m_relocation_ai_notify_delay;
+
+        static bool   m_visibility_observer_sweep_enabled;
+        static uint32 m_visibility_observer_sweep_interval;
 
         // CLI command holder to be thread safe
         ACE_Based::LockedQueue<CliCommandHolder*, ACE_Thread_Mutex> cliCmdQueue;

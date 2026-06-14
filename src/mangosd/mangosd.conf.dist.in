@@ -573,6 +573,33 @@ SD3ErrorLogFile              = "scriptdev3-errors.log"
 #        range (0..6): 0 is the first day of the week (normally sunday), 6 is the latest
 #        Default: 3 (Wednesday in EU)
 #
+#    ScheduledExit.Enable
+#        Enable scheduled shutdown/restart.
+#        Default: 0
+#
+#    ScheduledExit.DayOfWeek
+#        Day of week for scheduled action.
+#        Convention: 0 = Sunday, 1 = Monday, ... 6 = Saturday.
+#        Default: 3
+#
+#    ScheduledExit.Time
+#        Local server time in HH:MM 24-hour format.
+#        Default: "05:00"
+#
+#    ScheduledExit.Mode
+#        shutdown or restart.
+#        Default: "restart"
+#
+#    ScheduledExit.Delay
+#        Delay in seconds before final exit/restart once the schedule fires.
+#        Default: 900
+#
+#    ScheduledExit.WarningTimes
+#        Comma-separated remaining-seconds milestones for localized server messages.
+#        Text is loaded from the mangos_string table.
+#        Supported default milestones: 900,600,300,60.
+#        Default: "900,600,300,60"
+#
 #    InstantLogout
 #        Enable or disable instant logout for security level (0..4) or high (NOT in combat/while dueling/while falling)
 #        Default: 1 (Mods/GMs/Admins)
@@ -806,6 +833,12 @@ MaxHonorPoints                            = 75000
 StartHonorPoints                          = 0
 MinHonorKills                             = 15
 MaintenanceDay                            = 3
+ScheduledExit.Enable                      = 0
+ScheduledExit.DayOfWeek                   = 3
+ScheduledExit.Time                        = "05:00"
+ScheduledExit.Mode                        = "restart"
+ScheduledExit.Delay                       = 900
+ScheduledExit.WarningTimes                = "900,600,300,60"
 InstantLogout                             = 1
 MountCost                                 = 100000
 TrainMountCost                            = 900000
@@ -1231,10 +1264,24 @@ GM.MaxSpeedFactor         = 10
 #        Delay time between creature AI reactions on nearby movements
 #        Default: 1000 (milliseconds)
 #
+#    Visibility.ObserverSweep.Enable
+#        Periodically rebuild each player's own visible-object set so that objects
+#        which move out of range while the player stands still are removed from the
+#        client. Without this, out-of-range cleanup is only driven by the observer
+#        moving or by the observed object moving (and the latter only notifies
+#        observers still near that object), so an active creature that walks away
+#        from a stationary player can stay frozen at the edge of view.
+#        Default: 1 (enabled)
+#
+#    Visibility.ObserverSweep.Interval
+#        Interval between observer-side visibility sweeps, applied per player.
+#        Lower values remove stale objects sooner; higher values use less CPU.
+#        Default: 2000 (milliseconds)
+#
 ################################################################################
 
 Visibility.GroupMode               = 0
-Visibility.Distance.Continents     = 90
+Visibility.Distance.Continents     = 100
 Visibility.Distance.Instances      = 120
 Visibility.Distance.BG             = 180
 Visibility.Distance.InFlight       = 100
@@ -1242,6 +1289,52 @@ Visibility.Distance.Grey.Unit      = 1
 Visibility.Distance.Grey.Object    = 10
 Visibility.RelocationLowerLimit    = 10
 Visibility.AIRelocationNotifyDelay = 1000
+Visibility.ObserverSweep.Enable    = 1
+Visibility.ObserverSweep.Interval  = 2000
+
+################################################################################
+# CINEMATIC FLYOVER
+#
+#    Cinematic.Flyover.Enable
+#        Enable cinematic flyover visibility for first-login intros
+#        This feature shows a populated world during the starting-area cinematic
+#        by binding the player camera to a temporary invisible creature that
+#        moves along a pre-baked route.
+#        Default: 1 (enabled)
+#                 0 (disabled)
+#
+#    Cinematic.Flyover.UpdateIntervalMs
+#        Update interval for moving the cinematic body (in milliseconds)
+#        Default: 200
+#
+#    Cinematic.Flyover.TimeoutSec
+#        Timeout for stopping the flyover if not completed (in seconds)
+#        Default: 120
+#
+#    Cinematic.Flyover.Debug
+#        Enable debug logging for cinematic flyover
+#        Default: 0 (disabled)
+#                 1 (enabled)
+#
+#    Cinematic.Flyover.BodyEntry
+#        Creature entry to use as the invisible cinematic body
+#        Default: 12999 (World Invisible Trigger)
+#
+#    Cinematic.Flyover.VisibilityDistance
+#        Visibility radius (yards) used while the flyover is active, so NPCs along
+#        the route stream in before the camera reaches them and persist as it
+#        pulls away. Applies only to the cinematic viewpoint, not to other
+#        players; reverts to Visibility.Distance.Continents when the flyover ends.
+#        Default: 250
+#
+################################################################################
+
+Cinematic.Flyover.Enable        = 1
+Cinematic.Flyover.UpdateIntervalMs = 200
+Cinematic.Flyover.TimeoutSec    = 120
+Cinematic.Flyover.Debug         = 0
+Cinematic.Flyover.BodyEntry     = 12999
+Cinematic.Flyover.VisibilityDistance = 250
 
 ################################################################################
 # SERVER RATES

@@ -199,7 +199,7 @@ bool Engine::DoNextAction(Unit* unit, int depth)
                 if (action->isPossible() && relevance)
                 {
                     if ((!skipPrerequisites || lastRelevance-relevance > 0.04) &&
-                            MultiplyAndPush(actionNode->getPrerequisites(), relevance + 0.02, false, event))
+                        MultiplyAndPush(actionNode->getPrerequisites(), relevance + 0.02, false, event))
                     {
                         PushAgain(actionNode, relevance + 0.01, event);
                         continue;
@@ -209,8 +209,17 @@ bool Engine::DoNextAction(Unit* unit, int depth)
 
                     if (actionExecuted)
                     {
-                        LogAction("A:%s - OK", action->getName().c_str());
-                        MultiplyAndPush(actionNode->getContinuers(), 0, false, event);
+                        if (actionNode->isPersistent() && action->isUseful() &&
+                            !actionNode->hasPersistTimedOut())
+                        {
+                            LogAction("A:%s - OK - REPUSH", action->getName().c_str());
+                            PushAgain(actionNode, relevance, event);
+                        }
+                        else
+                        {
+                            LogAction("A:%s - OK", action->getName().c_str());
+                            MultiplyAndPush(actionNode->getContinuers(), 0, false, event);
+                        }
                         lastRelevance = relevance;
                         break;
                     }
@@ -247,9 +256,7 @@ bool Engine::DoNextAction(Unit* unit, int depth)
 
     if (time(0) - currentTime > 1)
     {
-    {
         LogAction("too long execution");
-    }
     }
 
     if (!actionExecuted)
@@ -274,7 +281,9 @@ ActionNode* Engine::CreateActionNode(string name)
     {
         node = i->second->GetAction(name);
         if (node)
+        {
             break;
+        }
     }
     if (!node)
     {
@@ -475,7 +484,10 @@ void Engine::ProcessTriggers()
     for (list<TriggerNode*>::iterator i = triggers.begin(); i != triggers.end(); i++)
     {
         Trigger* trigger = (*i)->getTrigger();
-        if (trigger) trigger->Reset();
+        if (trigger)
+        {
+            trigger->Reset();
+        }
     }
 }
 
@@ -597,18 +609,18 @@ void Engine::ChangeStrategy(string &names)
         const char* name = i->c_str();
         switch (name[0])
         {
-        case '+':
-            addStrategy(name+1);
-            break;
-        case '-':
-            removeStrategy(name+1);
-            break;
-        case '~':
-            toggleStrategy(name+1);
-            break;
-        case '?':
-            ai->TellMaster(ListStrategies());
-            break;
+            case '+':
+                addStrategy(name+1);
+                break;
+            case '-':
+                removeStrategy(name+1);
+                break;
+            case '~':
+                toggleStrategy(name+1);
+                break;
+            case '?':
+                ai->TellMaster(ListStrategies());
+                break;
         }
     }
 }

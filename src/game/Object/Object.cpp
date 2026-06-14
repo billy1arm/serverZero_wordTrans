@@ -397,6 +397,7 @@ void Object::BuildMovementUpdate(ByteBuffer* data, uint8 updateFlags) const
                 ((Unit*)this)->m_movementInfo.RemoveMovementFlag(MOVEFLAG_ONTRANSPORT);
             }
 
+        // fall through to TYPEID_UNIT — unit must be set for UPDATEFLAG_LIVING
         case TYPEID_UNIT:
             unit = static_cast<Unit const*>(this);
             moveflags = unit->m_movementInfo.GetMovementFlags();
@@ -414,6 +415,25 @@ void Object::BuildMovementUpdate(ByteBuffer* data, uint8 updateFlags) const
         if (unit->IsStopped() && unit->m_movementInfo.HasMovementFlag(MOVEFLAG_SPLINE_ENABLED))
         {
             sLog.outError("%s is not moving but have spline movement enabled!", GetGuidStr().c_str());
+            std::string victimGuid = "none";
+            if (Unit const* victim = unit->getVictim())
+            {
+                victimGuid = victim->GetGuidStr();
+            }
+
+            ObjectGuid const& targetGuid = unit->GetTargetGuid();
+            std::string targetGuidString = targetGuid.IsEmpty() ? "none" : targetGuid.GetString();
+            GridPair gridPair = MaNGOS::ComputeGridPair(unit->GetPositionX(), unit->GetPositionY());
+            CellPair cellPair = MaNGOS::ComputeCellPair(unit->GetPositionX(), unit->GetPositionY());
+
+            sLog.outError("[LivingWorld] spline-stall %s map=%u inst=%u pos=(%.2f,%.2f,%.2f o=%.2f) grid[%u,%u] cell[%u,%u] active-object=%s moveflags=0x%X movegen=%u in-combat=%s combat-timer=%u victim=%s target=%s",
+                          unit->GetGuidStr().c_str(), unit->GetMapId(), unit->GetInstanceId(),
+                          unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), unit->GetOrientation(),
+                          gridPair.x_coord, gridPair.y_coord, cellPair.x_coord, cellPair.y_coord,
+                          unit->IsActiveObject() ? "yes" : "no", uint32(moveflags),
+                          uint32(const_cast<Unit*>(unit)->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                          unit->IsInCombat() ? "yes" : "no", unit->GetCombatTimer(),
+                          victimGuid.c_str(), targetGuidString.c_str());
             ((Unit*)this)->m_movementInfo.RemoveMovementFlag(MovementFlags(MOVEFLAG_SPLINE_ENABLED | MOVEFLAG_FORWARD));
         }
 
@@ -543,9 +563,9 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
 
                 // there are some float values which may be negative or can't get negative due to other checks
                 else if ((index >= PLAYER_FIELD_NEGSTAT0    && index <= PLAYER_FIELD_NEGSTAT4) ||
-                        (index >= PLAYER_FIELD_RESISTANCEBUFFMODSPOSITIVE  && index <= (PLAYER_FIELD_RESISTANCEBUFFMODSPOSITIVE + 6)) ||
-                        (index >= PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE  && index <= (PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE + 6)) ||
-                        (index >= PLAYER_FIELD_POSSTAT0    && index <= PLAYER_FIELD_POSSTAT4))
+                    (index >= PLAYER_FIELD_RESISTANCEBUFFMODSPOSITIVE  && index <= (PLAYER_FIELD_RESISTANCEBUFFMODSPOSITIVE + 6)) ||
+                    (index >= PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE  && index <= (PLAYER_FIELD_RESISTANCEBUFFMODSNEGATIVE + 6)) ||
+                    (index >= PLAYER_FIELD_POSSTAT0    && index <= PLAYER_FIELD_POSSTAT4))
                 {
                     *data << uint32(m_floatValues[index]);
                 }
@@ -745,10 +765,12 @@ bool Object::LoadValues(const char* data)
 void Object::_SetUpdateBits(UpdateMask* updateMask, Player* /*target*/) const
 {
     for (uint16 index = 0; index < m_valuesCount; ++index)
+    {
         if (m_changedValues[index])
         {
             updateMask->SetBit(index);
         }
+    }
 }
 
 /**
@@ -762,10 +784,12 @@ void Object::_SetUpdateBits(UpdateMask* updateMask, Player* /*target*/) const
 void Object::_SetCreateBits(UpdateMask* updateMask, Player* /*target*/) const
 {
     for (uint16 index = 0; index < m_valuesCount; ++index)
+    {
         if (GetUInt32Value(index) != 0)
         {
             updateMask->SetBit(index);
         }
+    }
 }
 
 /**
@@ -1299,11 +1323,12 @@ void Object::MarkForClientUpdate()
  */
 WorldObject::WorldObject() :
 #ifdef ENABLE_ELUNA
-    elunaEvents(nullptr),
+elunaEvents(nullptr),
 #endif /* ENABLE_ELUNA */
     m_currMap(NULL),
     m_mapId(0), m_InstanceId(0),
-    m_isActiveObject(false)
+    m_isActiveObject(false),
+    m_visibilityDistanceOverride(0.0f)
 {
 }
 
@@ -2037,8 +2062,8 @@ void WorldObject::UpdateAllowedPositionZ(float x, float y, float& z, Map* atMap 
                 bool canSwim = ((Creature const*)this)->CanSwim() && ((Creature const*)this)->IsInWater();
                 float ground_z = z;
                 float max_z = canSwim
-                            ? atMap->GetTerrain()->GetWaterOrGroundLevel(x, y, z, &ground_z, !((Unit const*)this)->HasAuraType(SPELL_AURA_WATER_WALK))
-                            : ((ground_z = atMap->GetHeight(x, y, z)));
+                    ? atMap->GetTerrain()->GetWaterOrGroundLevel(x, y, z, &ground_z, !((Unit const*)this)->HasAuraType(SPELL_AURA_WATER_WALK))
+                    : ((ground_z = atMap->GetHeight(x, y, z)));
                 if (max_z > INVALID_HEIGHT)
                 {
                     if (z > max_z)
@@ -2116,7 +2141,7 @@ void WorldObject::MonsterSay(const char* text, uint32 /*language*/, Unit const* 
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_MONSTER_SAY, text, LANG_UNIVERSAL, CHAT_TAG_NONE, GetObjectGuid(), GetName(),
-                                 target ? target->GetObjectGuid() : ObjectGuid(), target ? target->GetName() : "");
+        target ? target->GetObjectGuid() : ObjectGuid(), target ? target->GetName() : "");
     SendMessageToSetInRange(&data, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_SAY), true);
 }
 
@@ -2132,7 +2157,7 @@ void WorldObject::MonsterYell(const char* text, uint32 /*language*/, Unit const*
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, CHAT_MSG_MONSTER_YELL, text, LANG_UNIVERSAL, CHAT_TAG_NONE, GetObjectGuid(), GetName(),
-                                 target ? target->GetObjectGuid() : ObjectGuid(), target ? target->GetName() : "");
+        target ? target->GetObjectGuid() : ObjectGuid(), target ? target->GetName() : "");
     SendMessageToSetInRange(&data, sWorld.getConfig(CONFIG_FLOAT_LISTEN_RANGE_YELL), true);
 }
 
@@ -2148,7 +2173,7 @@ void WorldObject::MonsterTextEmote(const char* text, Unit const* target, bool Is
 {
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, IsBossEmote ? CHAT_MSG_RAID_BOSS_EMOTE : CHAT_MSG_MONSTER_EMOTE, text, LANG_UNIVERSAL, CHAT_TAG_NONE, GetObjectGuid(), GetName(),
-                                 target ? target->GetObjectGuid() : ObjectGuid(), target ? target->GetName() : "");
+        target ? target->GetObjectGuid() : ObjectGuid(), target ? target->GetName() : "");
     SendMessageToSetInRange(&data, sWorld.getConfig(IsBossEmote ? CONFIG_FLOAT_LISTEN_RANGE_YELL : CONFIG_FLOAT_LISTEN_RANGE_TEXTEMOTE), true);
 }
 
@@ -2169,7 +2194,7 @@ void WorldObject::MonsterWhisper(const char* text, Unit const* target, bool IsBo
 
     WorldPacket data;
     ChatHandler::BuildChatPacket(data, IsBossWhisper ? CHAT_MSG_RAID_BOSS_WHISPER : CHAT_MSG_MONSTER_WHISPER, text, LANG_UNIVERSAL, CHAT_TAG_NONE, GetObjectGuid(), GetName(),
-                                 target->GetObjectGuid(), target->GetName());
+        target->GetObjectGuid(), target->GetName());
     ((Player*)target)->GetSession()->SendPacket(&data);
 }
 
@@ -2213,7 +2238,7 @@ namespace MaNGOS
                 }
 
                 ChatHandler::BuildChatPacket(data, i_msgtype, text, i_language, CHAT_TAG_NONE, i_object.GetObjectGuid(), i_object.GetNameForLocaleIdx(loc_idx),
-                                             i_target ? i_target->GetObjectGuid() : ObjectGuid(), i_target ? i_target->GetNameForLocaleIdx(loc_idx) : "");
+                    i_target ? i_target->GetObjectGuid() : ObjectGuid(), i_target ? i_target->GetNameForLocaleIdx(loc_idx) : "");
             }
 
         private:
@@ -2317,10 +2342,12 @@ void WorldObject::MonsterText(MangosStringLocale const* textData, Unit const* ta
             uint32 zoneid = GetZoneId();
             Map::PlayerList const& pList = GetMap()->GetPlayers();
             for (Map::PlayerList::const_iterator itr = pList.begin(); itr != pList.end(); ++itr)
+            {
                 if (itr->getSource()->GetZoneId() == zoneid)
                 {
                     say_do(itr->getSource());
                 }
+            }
             break;
         }
     }
@@ -2396,7 +2423,7 @@ void WorldObject::SendMessageToSetExcept(WorldPacket* data, Player const* skippe
     if (IsInWorld())
     {
         MaNGOS::MessageDelivererExcept notifier(data, skipped_receiver);
-        Cell::VisitWorldObjects(this, notifier, GetMap()->GetVisibilityDistance());
+        Cell::VisitWorldObjects(this, notifier, GetMap()->GetBroadcastRadius());
     }
 }
 
@@ -2667,7 +2694,7 @@ namespace MaNGOS
              * @param u Unit to process
              */
             template<class T>
-            void operator()(T* u) const
+                void operator()(T* u) const
             {
                 // skip self or target
                 if (u == i_searcher || u == &i_object)
@@ -3057,7 +3084,7 @@ struct WorldObjectChangeAccumulator
      * @brief Visit cameras
      * @param m Camera map
      *
- * Builds update data for all camera owners that can see this object.
+     * Builds update data for all camera owners that can see this object.
      */
     void Visit(CameraMapType& m)
     {
@@ -3086,7 +3113,7 @@ struct WorldObjectChangeAccumulator
 void WorldObject::BuildUpdateData(UpdateDataMapType& update_players)
 {
     WorldObjectChangeAccumulator notifier(*this, update_players);
-    Cell::VisitWorldObjects(this, notifier, GetMap()->GetVisibilityDistance());
+    Cell::VisitWorldObjects(this, notifier, GetMap()->GetBroadcastRadius());
 
     ClearUpdateMask(false);
 }
@@ -3120,9 +3147,9 @@ void WorldObject::SetActiveObjectState(bool active)
         return;
     }
 
+    // player's update implemented in a different from other active worldobject's way
+    // it's considered to use generic way in future
     if (IsInWorld() && !isType(TYPEMASK_PLAYER))
-        // player's update implemented in a different from other active worldobject's way
-        // it's considired to use generic way in future
     {
         if (IsActiveObject() && !active)
         {

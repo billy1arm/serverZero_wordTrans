@@ -57,6 +57,7 @@
 #include "Log.h"
 #include "Player.h"
 #include "World.h"
+#include "CinematicFlyover.h"
 #include "GuildMgr.h"
 #include "ObjectMgr.h"
 #include "WorldSession.h"
@@ -621,7 +622,7 @@ void WorldSession::HandleAddFriendOpcode(WorldPacket& recv_data)
     CharacterDatabase.escape_string(friendName);            // prevent SQL injection - normal name don't must changed by this call
 
     DEBUG_LOG("WORLD: %s asked to add friend : '%s'",
-              GetPlayer()->GetName(), friendName.c_str());
+        GetPlayer()->GetName(), friendName.c_str());
 
     CharacterDatabase.AsyncPQuery(&WorldSession::HandleAddFriendOpcodeCallBack, GetAccountId(), "SELECT `guid`, `race` FROM `characters` WHERE `name` = '%s'", friendName.c_str());
 }
@@ -738,7 +739,7 @@ void WorldSession::HandleAddIgnoreOpcode(WorldPacket& recv_data)
     CharacterDatabase.escape_string(IgnoreName);            // prevent SQL injection - normal name don't must changed by this call
 
     DEBUG_LOG("WORLD: %s asked to Ignore: '%s'",
-              GetPlayer()->GetName(), IgnoreName.c_str());
+        GetPlayer()->GetName(), IgnoreName.c_str());
 
     CharacterDatabase.AsyncPQuery(&WorldSession::HandleAddIgnoreOpcodeCallBack, GetAccountId(), "SELECT `guid` FROM `characters` WHERE `name` = '%s'", IgnoreName.c_str());
 }
@@ -1056,7 +1057,7 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket& recv_data)
         if (!instance_map)
         {
             player->GetSession()->SendAreaTriggerMessage("You can not enter %s while in a ghost mode",
-                    targetMapEntry->name[player->GetSession()->GetSessionDbcLocale()]);
+                targetMapEntry->name[player->GetSession()->GetSessionDbcLocale()]);
             return;
         }
 
@@ -1165,6 +1166,18 @@ void WorldSession::HandleSetActionButtonOpcode(WorldPacket& recv_data)
 void WorldSession::HandleCompleteCinematic(WorldPacket& /*recv_data*/)
 {
     DEBUG_LOG("WORLD: Received opcode CMSG_COMPLETE_CINEMATIC");
+
+    // Stop cinematic flyover if active
+    if (Player* player = GetPlayer())
+    {
+        if (CinematicFlyover* flyover = player->GetCinematicFlyover())
+        {
+            if (flyover->IsActive())
+            {
+                flyover->Stop();
+            }
+        }
+    }
 }
 
 /**
@@ -1175,6 +1188,17 @@ void WorldSession::HandleCompleteCinematic(WorldPacket& /*recv_data*/)
 void WorldSession::HandleNextCinematicCamera(WorldPacket& /*recv_data*/)
 {
     DEBUG_LOG("WORLD: Received opcode CMSG_NEXT_CINEMATIC_CAMERA");
+
+    // The client sends this when it enters the cinematic. Begin the flyover now
+    // (summon body + bind camera) so farsight binds in sync with the client's
+    // cinematic rather than during the login control window. Begin() is guarded.
+    if (Player* player = GetPlayer())
+    {
+        if (CinematicFlyover* flyover = player->GetCinematicFlyover())
+        {
+            flyover->Begin();
+        }
+    }
 }
 
 /**
@@ -1199,24 +1223,24 @@ void WorldSession::HandleMoveUnRootAck(WorldPacket& recv_data)
 {
     // no used
     recv_data.rpos(recv_data.wpos());                       // prevent warnings spam
-    /*
-        ObjectGuid guid;
-        recv_data >> guid;
+    /**
+     * ObjectGuid guid;
+     * recv_data >> guid;
 
-        // now can skip not our packet
-        if (_player->GetGUID() != guid)
-        {
-            recv_data.rpos(recv_data.wpos());               // prevent warnings spam
-            return;
-        }
+     * // now can skip not our packet
+     * if (_player->GetGUID() != guid)
+     * {
+     *     recv_data.rpos(recv_data.wpos());               // prevent warnings spam
+     *     return;
+     * }
 
-        DEBUG_LOG("WORLD: Received opcode CMSG_FORCE_MOVE_UNROOT_ACK");
+     * DEBUG_LOG("WORLD: Received opcode CMSG_FORCE_MOVE_UNROOT_ACK");
 
-        recv_data.read_skip<uint32>();                      // unk
+     * recv_data.read_skip<uint32>();                      // unk
 
-        MovementInfo movementInfo;
-        ReadMovementInfo(recv_data, &movementInfo);
-    */
+     * MovementInfo movementInfo;
+     * ReadMovementInfo(recv_data, &movementInfo);
+     */
 }
 
 /**
@@ -1228,24 +1252,24 @@ void WorldSession::HandleMoveRootAck(WorldPacket& recv_data)
 {
     // no used
     recv_data.rpos(recv_data.wpos());                       // prevent warnings spam
-    /*
-        ObjectGuid guid;
-        recv_data >> guid;
+    /**
+     * ObjectGuid guid;
+     * recv_data >> guid;
 
-        // now can skip not our packet
-        if (_player->GetObjectGuid() != guid)
-        {
-            recv_data.rpos(recv_data.wpos());               // prevent warnings spam
-            return;
-        }
+     * // now can skip not our packet
+     * if (_player->GetObjectGuid() != guid)
+     * {
+     *     recv_data.rpos(recv_data.wpos());               // prevent warnings spam
+     *     return;
+     * }
 
-        DEBUG_LOG("WORLD: Received opcode CMSG_FORCE_MOVE_ROOT_ACK");
+     * DEBUG_LOG("WORLD: Received opcode CMSG_FORCE_MOVE_ROOT_ACK");
 
-        recv_data.read_skip<uint32>();                      // unk
+     * recv_data.read_skip<uint32>();                      // unk
 
-        MovementInfo movementInfo;
-        ReadMovementInfo(recv_data, &movementInfo);
-    */
+     * MovementInfo movementInfo;
+     * ReadMovementInfo(recv_data, &movementInfo);
+     */
 }
 
 /**
@@ -1590,10 +1614,10 @@ void WorldSession::HandleCancelMountAuraOpcode(WorldPacket& /*recv_data*/)
  */
 void WorldSession::HandleRequestPetInfoOpcode(WorldPacket& /*recv_data */)
 {
-    /*
-        DEBUG_LOG("WORLD: Received opcode CMSG_REQUEST_PET_INFO");
-        recv_data.hexlike();
-    */
+    /**
+     *    DEBUG_LOG("WORLD: Received opcode CMSG_REQUEST_PET_INFO");
+     *    recv_data.hexlike();
+     */
 }
 
 /**

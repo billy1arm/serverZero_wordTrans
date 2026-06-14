@@ -55,6 +55,7 @@
 #include "Player.h"
 #include "ObjectMgr.h"
 #include "Group.h"
+#include "CinematicFlyover.h"
 #include "Guild.h"
 #include "GuildMgr.h"
 #include "World.h"
@@ -143,12 +144,12 @@ bool WorldSessionFilter::Process(WorldPacket* packet)
 }
 
 /// WorldSession constructor
-WorldSession::WorldSession(uint32 id, WorldSocket* sock, AccountTypes sec, time_t mute_time, LocaleConstant locale) :
-    m_muteTime(mute_time),
+WorldSession::WorldSession(uint32 id, WorldSocket* sock, AccountTypes sec, time_t mute_time, LocaleConstant locale)
+    : m_muteTime(mute_time),
     _player(NULL), m_Socket(sock), _security(sec), _accountId(id), _warden(NULL), _build(0), _logoutTime(0),
     m_inQueue(false), m_playerLoading(false), m_playerLogout(false), m_playerRecentlyLogout(false), m_playerSave(false),
     m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(sObjectMgr.GetIndexForLocale(locale)),
-    m_latency(0), m_clientTimeDelay(0), m_tutorialState(TUTORIALDATA_UNCHANGED)
+    m_latency(0), m_clientTimeDelay(0), m_tutorialState(TUTORIALDATA_UNCHANGED), m_npcWatchLastGuid()
 {
     if (sock)
     {
@@ -197,7 +198,7 @@ WorldSession::~WorldSession()
 void WorldSession::SizeError(WorldPacket const& packet, uint32 size) const
 {
     sLog.outError("Client (account %u) send packet %s (%u) with size %zu but expected %u (attempt crash server?), skipped",
-                  GetAccountId(), packet.GetOpcodeName(), packet.GetOpcode(), packet.size(), size);
+        GetAccountId(), packet.GetOpcodeName(), packet.GetOpcode(), packet.size(), size);
 }
 
 /// Get the player name
@@ -286,18 +287,18 @@ void WorldSession::QueuePacket(WorldPacket* new_packet)
 void WorldSession::LogUnexpectedOpcode(WorldPacket* packet, const char* reason)
 {
     sLog.outError("SESSION: received unexpected opcode %s (0x%.4X) %s",
-                  packet->GetOpcodeName(),
-                  packet->GetOpcode(),
-                  reason);
+        packet->GetOpcodeName(),
+        packet->GetOpcode(),
+        reason);
 }
 
 /// Logging helper for unexpected opcodes
 void WorldSession::LogUnprocessedTail(WorldPacket* packet)
 {
     sLog.outError("SESSION: opcode %s (0x%.4X) have unprocessed tail data (read stop at %zu from %zu)",
-                  packet->GetOpcodeName(),
-                  packet->GetOpcode(),
-                  packet->rpos(), packet->wpos());
+        packet->GetOpcodeName(),
+        packet->GetOpcode(),
+        packet->rpos(), packet->wpos());
 }
 
 /// Update the WorldSession (triggered by World update)
@@ -308,11 +309,11 @@ bool WorldSession::Update(PacketFilter& updater)
     WorldPacket* packet = NULL;
     while (m_Socket && !m_Socket->IsClosed() && _recvQueue.next(packet, updater))
     {
-        /*#if 1
-        sLog.outError( "MOEP: %s (0x%.4X)",
-                        packet->GetOpcodeName(),
-                        packet->GetOpcode());
-        #endif*/
+        /**#if 1
+         * sLog.outError( "MOEP: %s (0x%.4X)",
+         *                 packet->GetOpcodeName(),
+         *                 packet->GetOpcode());
+         * #endif*/
 
         OpcodeHandler const& opHandle = opcodeTable[packet->GetOpcode()];
         try
@@ -383,25 +384,25 @@ bool WorldSession::Update(PacketFilter& updater)
                     break;
                 case STATUS_NEVER:
                     sLog.outError("SESSION: received not allowed opcode %s (0x%.4X)",
-                                  packet->GetOpcodeName(),
-                                  packet->GetOpcode());
+                        packet->GetOpcodeName(),
+                        packet->GetOpcode());
                     break;
                 case STATUS_UNHANDLED:
                     DEBUG_LOG("SESSION: received not handled opcode %s (0x%.4X)",
-                              LookupOpcodeName(packet->GetOpcode()),
-                              packet->GetOpcode());
+                        LookupOpcodeName(packet->GetOpcode()),
+                        packet->GetOpcode());
                     break;
                 default:
                     sLog.outError("SESSION: received wrong-status-req opcode %s (0x%.4X)",
-                                  packet->GetOpcodeName(),
-                                  packet->GetOpcode());
+                        packet->GetOpcodeName(),
+                        packet->GetOpcode());
                     break;
             }
         }
         catch (ByteBufferException&)
         {
             sLog.outError("WorldSession::Update ByteBufferException occured while parsing a packet (opcode: %u) from client %s, accountid=%i.",
-                          packet->GetOpcode(), GetRemoteAddress().c_str(), GetAccountId());
+                packet->GetOpcode(), GetRemoteAddress().c_str(), GetAccountId());
             if (sLog.HasLogLevelOrHigher(LOG_LVL_DEBUG))
             {
                 DEBUG_LOG("Dumping error causing packet:");
@@ -411,7 +412,7 @@ bool WorldSession::Update(PacketFilter& updater)
             if (sWorld.getConfig(CONFIG_BOOL_KICK_PLAYER_ON_BAD_PACKET))
             {
                 DETAIL_LOG("Disconnecting session [account id %u / address %s] for badly formatted packet.",
-                           GetAccountId(), GetRemoteAddress().c_str());
+                    GetAccountId(), GetRemoteAddress().c_str());
 
                 KickPlayer();
             }
@@ -497,6 +498,15 @@ void WorldSession::LogoutPlayer(bool Save)
 
     if (_player)
     {
+        // Stop cinematic flyover if active
+        if (CinematicFlyover* flyover = _player->GetCinematicFlyover())
+        {
+            if (flyover->IsActive())
+            {
+                flyover->Stop();
+            }
+        }
+
 #ifdef ENABLE_PLAYERBOTS
         if (GetPlayer()->GetPlayerbotMgr())
         {
@@ -565,10 +575,12 @@ void WorldSession::LogoutPlayer(bool Save)
             // give bg rewards and update counters like kill by first from attackers
             // this can't be called for all attackers.
             if (!aset.empty())
+            {
                 if (BattleGround* bg = _player->GetBattleGround())
                 {
                     bg->HandleKillPlayer(_player, *aset.begin());
                 }
+            }
         }
         else if (_player->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION))
         {
@@ -701,6 +713,7 @@ void WorldSession::LogoutPlayer(bool Save)
             Map::DeleteFromWorld(_player);
         }
 
+        ClearNpcWatchLastGuid();
         SetPlayer(NULL);                                    // deleted in Remove/DeleteFromWorld call
 
         ///- Send the 'logout complete' packet to the client
@@ -819,8 +832,8 @@ const char* WorldSession::GetMangosString(int32 entry) const
 void WorldSession::Handle_NULL(WorldPacket& recvPacket)
 {
     DEBUG_LOG("SESSION: received unimplemented opcode %s (0x%.4X)",
-              recvPacket.GetOpcodeName(),
-              recvPacket.GetOpcode());
+        recvPacket.GetOpcodeName(),
+        recvPacket.GetOpcode());
 }
 
 /**
@@ -831,8 +844,8 @@ void WorldSession::Handle_NULL(WorldPacket& recvPacket)
 void WorldSession::Handle_EarlyProccess(WorldPacket& recvPacket)
 {
     sLog.outError("SESSION: received opcode %s (0x%.4X) that must be processed in WorldSocket::OnRead",
-                  recvPacket.GetOpcodeName(),
-                  recvPacket.GetOpcode());
+        recvPacket.GetOpcodeName(),
+        recvPacket.GetOpcode());
 }
 
 /**
@@ -843,8 +856,8 @@ void WorldSession::Handle_EarlyProccess(WorldPacket& recvPacket)
 void WorldSession::Handle_ServerSide(WorldPacket& recvPacket)
 {
     sLog.outError("SESSION: received server-side opcode %s (0x%.4X)",
-                  recvPacket.GetOpcodeName(),
-                  recvPacket.GetOpcode());
+        recvPacket.GetOpcodeName(),
+        recvPacket.GetOpcode());
 }
 
 /**
@@ -855,8 +868,8 @@ void WorldSession::Handle_ServerSide(WorldPacket& recvPacket)
 void WorldSession::Handle_Deprecated(WorldPacket& recvPacket)
 {
     sLog.outError("SESSION: received deprecated opcode %s (0x%.4X)",
-                  recvPacket.GetOpcodeName(),
-                  recvPacket.GetOpcode());
+        recvPacket.GetOpcodeName(),
+        recvPacket.GetOpcode());
 }
 
 /**

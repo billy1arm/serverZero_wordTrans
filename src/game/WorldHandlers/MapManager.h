@@ -59,7 +59,7 @@ struct MapID
 
 class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockable<MapManager, ACE_Recursive_Thread_Mutex> >
 {
-        friend class MaNGOS::OperatorNew<MapManager>;
+    friend class MaNGOS::OperatorNew<MapManager>;
 
     public:
         typedef std::map<MapID, Map* > MapMapType;
@@ -140,7 +140,15 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
 
         void RemoveAllObjectsInRemoveList();
 
-        void LoadContinents();
+        struct LivingWorldStartupStats
+        {
+            uint32 forcedMaps = 0;
+            uint32 totalUniqueGrids = 0;
+            uint32 totalNewlyLoaded = 0;
+            uint32 totalLocalTransports = 0;
+        };
+
+        LivingWorldStartupStats LoadContinents();
         void LoadTransports();
 
         typedef std::set<Transport*> TransportSet;
@@ -173,7 +181,7 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
         }
 
         template<typename Do>
-        void DoForAllMapsWithMapId(uint32 mapId, Do& _do);
+            void DoForAllMapsWithMapId(uint32 mapId, Do& _do);
         void DoForAllMaps(const std::function<void(Map*)>& worker);
 
     private:
@@ -209,7 +217,7 @@ class MapManager : public MaNGOS::Singleton<MapManager, MaNGOS::ClassLevelLockab
 };
 
 template<typename Do>
-inline void MapManager::DoForAllMapsWithMapId(uint32 mapId, Do& _do)
+    inline void MapManager::DoForAllMapsWithMapId(uint32 mapId, Do& _do)
 {
     MapMapType::const_iterator start = i_maps.lower_bound(MapID(mapId, 0));
     MapMapType::const_iterator end   = i_maps.lower_bound(MapID(mapId + 1, 0));

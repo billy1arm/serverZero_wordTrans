@@ -137,9 +137,9 @@ struct InstanceTemplate
 
 class Map : public GridRefManager<NGridType>
 {
-        friend class MapReference;
-        friend class ObjectGridLoader;
-        friend class ObjectWorldLoader;
+    friend class MapReference;
+    friend class ObjectGridLoader;
+    friend class ObjectWorldLoader;
 
     protected:
         Map(uint32 id, time_t, uint32 InstanceId);
@@ -180,6 +180,21 @@ class Map : public GridRefManager<NGridType>
         // function for setting up visibility distance for maps on per-type/per-Id basis
         virtual void InitVisibilityDistance();
 
+        /**
+         * Packet delivery radius: the map visibility distance, extended while a
+         * cinematic flyover viewer on this map watches from beyond it so that
+         * movement/update packets still reach that viewer's remote camera.
+         * Without this, creatures revealed by the wide flyover radius receive no
+         * further movement packets until the camera closes to the default
+         * distance, and the client visibly fast-walks them to catch up.
+         */
+        float GetBroadcastRadius() const;
+        /// Registration of cinematic flyover viewers. Each Add must be paired
+        /// with a Remove of the same radius on the same map; the effective
+        /// radius is the largest among the currently registered viewers.
+        void AddCinematicViewer(float radius);
+        void RemoveCinematicViewer(float radius);
+
         void PlayerRelocation(Player*, float x, float y, float z, float angl);
         void CreatureRelocation(Creature* creature, float x, float y, float z, float orientation);
 
@@ -196,6 +211,12 @@ class Map : public GridRefManager<NGridType>
             GridPair p = MaNGOS::ComputeGridPair(x, y);
             return loaded(p);
         }
+
+        // Read-only: true if the grid at the given grid indices is resident
+        // with its object data loaded. Index-based companion to IsLoaded(x,y);
+        // never loads or creates a grid. Caller must keep gridX/gridY within
+        // [0, MAX_NUMBER_OF_GRIDS).
+        bool IsGridLoaded(uint32 gridX, uint32 gridY) const { return loaded(GridPair(gridX, gridY)); }
 
         bool GetUnloadLock(const GridPair& p) const { return getNGrid(p.x_coord, p.y_coord)->getUnloadLock(); }
         void SetUnloadLock(const GridPair& p, bool on) { getNGrid(p.x_coord, p.y_coord)->setUnloadExplicitLock(on); }
@@ -386,8 +407,8 @@ class Map : public GridRefManager<NGridType>
         }
 
         void VisitNearbyCellsOf(WorldObject* obj,
-                                TypeContainerVisitor<MaNGOS::ObjectUpdater, GridTypeMapContainer> &gridVisitor,
-                                TypeContainerVisitor<MaNGOS::ObjectUpdater, WorldTypeMapContainer> &worldVisitor);
+            TypeContainerVisitor<MaNGOS::ObjectUpdater, GridTypeMapContainer> &gridVisitor,
+            TypeContainerVisitor<MaNGOS::ObjectUpdater, WorldTypeMapContainer> &worldVisitor);
 
         bool isGridObjectDataLoaded(uint32 x, uint32 y) const { return getNGrid(x, y)->isGridObjectDataLoaded(); }
         void setGridObjectDataLoaded(bool pLoaded, uint32 x, uint32 y) { getNGrid(x, y)->setGridObjectDataLoaded(pLoaded); }
@@ -404,6 +425,8 @@ class Map : public GridRefManager<NGridType>
         uint32 i_InstanceId;
         uint32 m_unloadTimer;
         float m_VisibleDistance;
+        std::multiset<float> m_cinematicViewerRadii;  ///< radii of active cinematic flyover viewers on this map
+        float m_cinematicViewerRadius;                ///< cached largest of m_cinematicViewerRadii (0 when none)
         MapPersistentState* m_persistentState;
 
         MapRefManager m_mapRefManager;
@@ -441,10 +464,10 @@ class Map : public GridRefManager<NGridType>
 
         // Type specific code for add/remove to/from grid
         template<class T>
-        void AddToGrid(T*, NGridType*, Cell const&);
+            void AddToGrid(T*, NGridType*, Cell const&);
 
         template<class T>
-        void RemoveFromGrid(T*, NGridType*, Cell const&);
+            void RemoveFromGrid(T*, NGridType*, Cell const&);
         // Holder for information about linked mobs
         CreatureLinkingHolder m_creatureLinkingHolder;
 
@@ -531,8 +554,7 @@ class BattleGroundMap : public Map
 };
 
 template<class T, class CONTAINER>
-inline void
-Map::Visit(const Cell& cell, TypeContainerVisitor<T, CONTAINER>& visitor)
+    inline void Map::Visit(const Cell& cell, TypeContainerVisitor<T, CONTAINER>& visitor)
 {
     const uint32 x = cell.GridX();
     const uint32 y = cell.GridY();

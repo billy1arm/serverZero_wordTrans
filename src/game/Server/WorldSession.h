@@ -211,7 +211,7 @@ class WorldSessionFilter : public PacketFilter
  */
 class WorldSession
 {
-        friend class CharacterHandler;
+    friend class CharacterHandler;
 
     public:
         /**
@@ -279,6 +279,18 @@ class WorldSession
         Player* GetPlayer() const
         {
             return _player;
+        }
+        ObjectGuid const& GetNpcWatchLastGuid() const
+        {
+            return m_npcWatchLastGuid;
+        }
+        void SetNpcWatchLastGuid(ObjectGuid const& guid)
+        {
+            m_npcWatchLastGuid = guid;
+        }
+        void ClearNpcWatchLastGuid()
+        {
+            m_npcWatchLastGuid.Clear();
         }
         char const* GetPlayerName() const;
         void SetSecurity(AccountTypes security)
@@ -498,15 +510,15 @@ class WorldSession
         void HandleLootMoneyOpcode(WorldPacket& recvPacket);
 
         /**
-        * Method which handles the loot Opcode sent by the client, happens when the player is actually looting the object.
-        * It generates required loot on purpose.
-        */
+         * Method which handles the loot Opcode sent by the client, happens when the player is actually looting the object.
+         * It generates required loot on purpose.
+         */
         void HandleLootOpcode(WorldPacket& recvPacket);
 
         /**
-        * Method which handles the loot release opcode sent by the client, happens when the player has end looting the object.
-        * It will take care of the looting state of the object depending on the case.
-        */
+         * Method which handles the loot release opcode sent by the client, happens when the player has end looting the object.
+         * It will take care of the looting state of the object depending on the case.
+         */
         void HandleLootReleaseOpcode(WorldPacket& recvPacket);
         void HandleLootMasterGiveOpcode(WorldPacket& recvPacket);
         void HandleWhoOpcode(WorldPacket& recvPacket);
@@ -873,6 +885,7 @@ class WorldSession
         uint32 m_Tutorials[8];
         TutorialDataState m_tutorialState;
         uint32 m_clientTimeDelay;
+        ObjectGuid m_npcWatchLastGuid;
         ACE_Based::LockedQueue<WorldPacket*, ACE_Thread_Mutex> _recvQueue;
 };
 #endif
